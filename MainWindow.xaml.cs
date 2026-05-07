@@ -1,34 +1,54 @@
-﻿using System.Text;
+﻿using LinkShot.Models;
+using LinkShot.Services;
+
+using System;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
 
 namespace LinkShot
 {
-    /// <summary>
-    /// Interaction logic for MainWindow.xaml
-    /// </summary>
     public partial class MainWindow : Window
     {
-            private readonly PostService _postService = new PostService();
+        private readonly AuthService _authService = new();
+        private readonly PostService _postService = new();
 
-            public MainWindow()
-            {
-                InitializeComponent();
-                PostList.ItemsSource = _postService.Posts;
-            }
+        private Post? _selectedPost;
 
-            private async void Post_Click(object sender, RoutedEventArgs e)
+        public MainWindow()
+        {
+            InitializeComponent();
+
+            RefreshFeeds();
+        }
+
+        private void RefreshFeeds()
+        {
+            LinkedInList.ItemsSource = null;
+            LinkedInList.ItemsSource = _postService.GetLinkedInPosts();
+
+            HandshakeList.ItemsSource = null;
+            HandshakeList.ItemsSource = _postService.GetHandshakePosts();
+        }
+
+        private async void Login_Click(object sender, RoutedEventArgs e)
+        {
+            bool success = await _authService.LoginAsync(
+                UsernameBox.Text,
+                PasswordBox.Password);
+
+            AuthStatusText.Text =
+                success
+                ? "Authenticated successfully."
+                : "Invalid credentials.";
+        }
+
+        private async void Post_Click(object sender, RoutedEventArgs e)
+        {
+            try
             {
-                if (string.IsNullOrWhiteSpace(ContentBox.Text))
+                if (!_authService.IsAuthenticated)
                 {
-                    MessageBox.Show("Post content cannot be empty.");
+                    MessageBox.Show("Please login first.");
                     return;
                 }
 
@@ -42,26 +62,117 @@ namespace LinkShot
 
                 await _postService.AddPostAsync(post);
 
-                ContentBox.Text = "";
-                ImageBox.Text = "";
-                LinkedInCheck.IsChecked = false;
-                HandshakeCheck.IsChecked = false;
-            }
+                RefreshFeeds();
 
-            private async void Delete_Click(object sender, RoutedEventArgs e)
+                ClearEditor();
+
+                StatusText.Text = "Post published.";
+            }
+            catch (Exception ex)
             {
-                var button = sender as FrameworkElement;
-                var post = button.Tag as Post;
-
-                if (post != null)
-                {
-                    await _postService.DeletePostAsync(post);
-                }
+                MessageBox.Show(ex.Message);
             }
+        }
 
-        private void ContentBox_TextChanged(object sender, TextChangedEventArgs e)
+        private async void Update_Click(object sender, RoutedEventArgs e)
         {
+            try
+            {
+                if (_selectedPost == null)
+                {
+                    MessageBox.Show("Select a post first.");
+                    return;
+                }
 
+                await _postService.UpdatePostAsync(
+                    _selectedPost,
+                    ContentBox.Text,
+                    ImageBox.Text,
+                    LinkedInCheck.IsChecked == true,
+                    HandshakeCheck.IsChecked == true);
+
+                RefreshFeeds();
+
+                StatusText.Text = "Post updated.";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message);
+            }
+        }
+
+        private async void DeleteSelected_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (_selectedPost == null)
+                {
+                    MessageBox.Show("Select a post first.");
+                    return;
+                }
+
+                await _postService.DeletePostAsync(_selectedPost);
+
+                RefreshFeeds();
+
+                ClearEditor();
+
+                StatusText.Text = "Post deleted.";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message);
+            }
+        }
+
+        private void LinkedInList_SelectionChanged(
+            object sender,
+            SelectionChangedEventArgs e)
+        {
+            if (LinkedInList.SelectedItem is Post post)
+            {
+                LoadPost(post);
+            }
+        }
+
+        private void HandshakeList_SelectionChanged(
+            object sender,
+            SelectionChangedEventArgs e)
+        {
+            if (HandshakeList.SelectedItem is Post post)
+            {
+                LoadPost(post);
+            }
+        }
+
+        private void LoadPost(Post post)
+        {
+            _selectedPost = post;
+
+            ContentBox.Text = post.Content;
+            ImageBox.Text = post.ImagePath;
+
+            LinkedInCheck.IsChecked = post.PostToLinkedIn;
+            HandshakeCheck.IsChecked = post.PostToHandshake;
+        }
+
+        private void ClearEditor()
+        {
+            _selectedPost = null;
+
+            ContentBox.Text = "";
+            ImageBox.Text = "";
+
+            LinkedInCheck.IsChecked = false;
+            HandshakeCheck.IsChecked = false;
+        }
+
+        private void ContentBox_TextChanged(
+            object sender,
+            TextChangedEventArgs e)
+        {
+            CharacterCountText.Text =
+                $"{ContentBox.Text.Length} characters";
         }
     }
-    }
+}
